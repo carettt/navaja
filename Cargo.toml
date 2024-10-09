@@ -1,0 +1,9 @@
+[package]
+name = "navaja"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+clap = { version = "4.5.20", features = [ "derive" ] }
+iprange = "0.6.7"
+ipnet = "2.10.1"
