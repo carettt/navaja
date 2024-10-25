@@ -1,7 +1,12 @@
 use clap::Parser;
-use std::net::{Ipv4Addr, SocketAddr, ToSocketAddrs};
-use iprange::IpRange;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::time::Duration;
+use tokio::{net::TcpStream, time::timeout};
 use ipnet::Ipv4Net;
+
+trait Target {
+    async fn port_scan(&self, ports: &Vec<u16>) -> Vec<u16>;
+}
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -16,45 +21,59 @@ struct Args {
     target_domain: Vec<String>,
 }
 
-struct NetworkRange {
-    ip_range: IpRange<Ipv4Net>,
-    ports: Vec<u16>,
-}
-
 enum DomainType {
     HOST,
     NETWORK
 }
 
-fn main() {
+impl Target for Ipv4Addr {
+    async fn port_scan(&self, ports: &Vec<u16>) -> Vec<u16> {
+        let mut open_ports: Vec<u16> = Vec::new();
+        
+        for port in ports {
+            let socket = SocketAddr::new(IpAddr::V4(*self), *port);
+
+            println!("Attempting to connect to port {} on {}", port, self);
+
+            match timeout(Duration::new(1, 0),
+                TcpStream::connect(socket)).await {
+                Ok(_) => { open_ports.push(*port) }
+                Err(_) => { println!("Port {} closed.", port); }
+            }
+        }
+
+        open_ports
+    }
+}
+
+#[tokio::main]
+async fn main() {
     let args = Args::parse();
-    let scope = NetworkRange {
-        ip_range: args.target_domain.iter()
-            .map(|n| n.parse::<Ipv4Net>().unwrap())
-            .collect(),
-        ports: args.ports.to_owned(),
-    };
+    let mode: DomainType = if args.network_scan { DomainType::NETWORK } else { DomainType::HOST };
+    let mut hosts: Vec<Ipv4Addr>;
 
-    let networks: Vec<Vec<Ipv4Addr>> = scope.ip_range.into_iter()
-        .map(|n| n.hosts().collect::<Vec<Ipv4Addr>>())
-        .collect();
+    match mode {
+        DomainType::HOST => {
+           hosts = args.target_domain.iter()
+               .map(|h| h.parse::<Ipv4Addr>().unwrap())
+               .collect();
+        }
 
-    for network in &networks {
-        for host in network {
-            println!("host: {}", host);
+        DomainType::NETWORK => {
+            hosts = Vec::new();
+            args.target_domain.iter()
+                .for_each(|n| {
+                    n.parse::<Ipv4Net>().unwrap()
+                        .hosts().into_iter().for_each(|h| hosts.push(h));
+                });
         }
     }
 
-    print!("[");
-    for i in 0..scope.ports.len()-1 {
-        print!("{},", scope.ports[i]);
-    }
-    print!("{}", scope.ports[scope.ports.len()-1]);
-    println!("]");
+    for host in &hosts {
+        let open_ports = host.port_scan(&args.ports).await;
 
-    if args.host_scan {
-        println!("Finished host scan!");
-    } else if args.network_scan {
-        println!("Finished network scan!");
+        for port in open_ports {
+            println!("Port {} open!", port);
+        }
     }
 }
