@@ -1,10 +1,10 @@
-use std::error::Error;
 use std::io::{stdout, stdin, Read, Write};
 use promkit::preset::readline::Readline;
 use clap::Parser;
 
 use navaja::proxy::ZAP;
 use navaja::http::HTTP;
+use navaja::Result;
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -25,7 +25,7 @@ fn pause(msg: &str) {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
+async fn main() -> Result<()> {
   let args = Args::parse();
 
   let api = ZAP::new(
